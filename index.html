@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Book Distributor System</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+body{font-family:Arial;background:#f2f2f2;margin:0}
+header{background:#1e293b;color:#fff;padding:15px;text-align:center;font-size:22px}
+nav{display:flex;background:#334155}
+nav button{flex:1;padding:12px;border:none;background:#334155;color:#fff;cursor:pointer}
+nav button:hover{background:#1e293b}
+section{display:none;padding:15px}
+input,button{padding:6px;margin:4px}
+table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff}
+th,td{border:1px solid #999;padding:8px;text-align:center}
+.box{background:#fff;padding:15px;margin-top:10px;border:1px solid #ccc;border-radius:4px}
+.summary-line{font-size: 1.1em; margin: 5px 0; font-weight: bold;}
+.pub-header {background:#1e293b; color:white; font-size:1.2em}
+.sub-header {background:#f1f5f9; font-weight:bold}
+/* Style for the new search box */
+#pubSearch { border: 2px solid #4f46e5; border-radius: 4px; outline: none; transition: 0.3s; }
+#pubSearch:focus { box-shadow: 0 0 5px rgba(79, 70, 229, 0.5); }
+</style>
+</head>
+
+<body>
+
+<header id="mainHeader">Book Distribution Shop</header>
+
+<nav>
+<button onclick="show('purchase')">Purchase</button>
+<button onclick="show('sales')">Set Sales</button>
+<button onclick="show('reports')">Reports</button>
+<button onclick="show('settings')">Settings</button>
+</nav>
+
+<section id="purchase">
+<h3>Publication Purchase & Installments</h3>
+
+<div class="box">
+Date: <input type="date" id="pDate">
+Publication: <input id="pubName" placeholder="Publisher Name">
+</div>
+
+<div class="box">
+<input id="bookName" placeholder="Book name">
+<input type="number" id="qty" placeholder="Qty">
+<input type="number" id="price" placeholder="Price ₹">
+<button onclick="addBook()" style="background:#0284c7; color:white; border:none; border-radius:3px">Add Book</button>
+
+<table id="bookTable">
+<tr><th>Book</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
+</table>
+</div>
+
+<div class="box">
+<div class="summary-line">Total Gross ₹: <span id="total">0</span></div>
+<div class="summary-line">Discount %: <input type="number" id="discountPerc" value="0" style="width:60px" oninput="renderBooks()"></div>
+<div class="summary-line" style="color:#059669">Net Amount (After Discount) ₹: <span id="net">0</span></div>
+<hr>
+<div class="summary-line">Initial Paid ₹: <input type="number" id="paid" value="0" oninput="renderBooks()"></div>
+<div class="summary-line" style="color:#dc2626">Balance ₹: <span id="balance">0</span></div>
+<br>
+<button onclick="savePurchase()" style="background:#059669; color:white; padding:10px 20px; border:none; border-radius:4px; cursor:pointer">Save Purchase</button>
+</div>
+
+<div class="box" style="background: #fffbeb; border: 1px solid #f59e0b;">
+<h4>Add New Installment / Add Books later</h4>
+Publication Name: <input id="updPub" placeholder="Exact Pub Name"><br>
+<b>Add Books (Optional):</b><br>
+<input id="updBook" placeholder="Book name"> Qty: <input type="number" id="updQty" style="width:60px"> Price: <input type="number" id="updPrice" style="width:80px"><br>
+<b>New Payment Installment:</b><br>
+Paid Amount ₹: <input type="number" id="updPaid" placeholder="Amount">
+<button onclick="updatePurchase()" style="background:#f59e0b; color:white; border:none">Update Record</button>
+</div>
+</section>
+
+<section id="sales">
+<h3>Set Sales</h3>
+<input id="setName" placeholder="Set name">
+<input type="number" id="setQty" placeholder="Qty">
+<input type="number" id="setPrice" placeholder="Price">
+<button onclick="sellSet()">Sell</button>
+
+<table id="salesTable">
+<tr><th>Date</th><th>Set</th><th>Qty</th><th>Total</th></tr>
+</table>
+</section>
+
+<section id="reports">
+<h3>Detailed Publication Report</h3>
+
+<div class="box">
+From: <input type="date" id="fromDate">
+To: <input type="date" id="toDate">
+<br>
+Search Publication: <input type="text" id="pubSearch" placeholder="Search by name..." oninput="loadReports()" style="width:250px">
+<button onclick="loadReports()" style="background:#4f46e5; color:white; border:none">Generate Report</button>
+<button onclick="exportExcel()">Excel</button>
+<button onclick="generatePDF()">PDF with Payment History</button>
+</div>
+
+<div id="reportContainer">
+<table id="reportTable"></table>
+</div>
+</section>
+
+<section id="settings">
+<h3>Settings</h3>
+<input id="shopInput" placeholder="Shop name">
+<button onclick="saveShop()">Save Shop Name</button>
+<br><br>
+<button onclick="clearData()" style="background:#ef4444; color:white; border:none">Clear All Data</button>
+</section>
+
+<script>
+let store = JSON.parse(localStorage.getItem("store")) || {purchases:[],sales:[]}
+let shopName = localStorage.getItem("shop") || "Book Distribution Shop";
+document.getElementById("mainHeader").innerText = shopName;
+let books=[]
+
+function show(id){
+ document.querySelectorAll("section").forEach(s=>s.style.display="none")
+ document.getElementById(id).style.display="block"
+}
+show("purchase")
+
+let today=new Date().toISOString().slice(0,10)
+pDate.value=fromDate.value=toDate.value=today
+
+function addBook(){
+ if(!bookName.value || !qty.value || !price.value) {alert("Fill book details"); return;}
+ let amt=qty.value*price.value
+ books.push({name:bookName.value, qty:+qty.value, price:+price.value, amt:amt})
+ renderBooks()
+ bookName.value=qty.value=price.value=""
+}
+
+function renderBooks(){
+ let t=0
+ bookTable.innerHTML="<tr><th>Book</th><th>Qty</th><th>Price</th><th>Amount</th></tr>"
+ books.forEach(b=>{ t+=b.amt; bookTable.innerHTML+=`<tr><td>${b.name}</td><td>${b.qty}</td><td>${b.price}</td><td>${b.amt}</td></tr>` })
+ let dVal = +discountPerc.value || 0
+ let dTotal = t - (t * (dVal / 100))
+ total.innerText = t
+ net.innerText = dTotal.toFixed(2)
+ balance.innerText = (dTotal - (+paid.value)).toFixed(2)
+}
+
+function savePurchase(){
+ if(books.length === 0){alert("Add at least one book"); return;}
+ let t=0; books.forEach(b=> t+=b.amt);
+ let dVal = +discountPerc.value || 0
+ let dTotal = t - (t * (dVal / 100))
+ 
+ store.purchases.push({
+  date:pDate.value, 
+  pub:pubName.value || "General", 
+  books:[...books],
+  discount: dVal, 
+  grossTotal: t, 
+  netTotal: dTotal, 
+  payments:[{date: pDate.value, amount: +paid.value}] 
+ })
+ 
+ books=[]; pubName.value=""; discountPerc.value="0"; paid.value="0";
+ bookTable.innerHTML="<tr><th>Book</th><th>Qty</th><th>Price</th><th>Amount</th></tr>"
+ total.innerText="0"; net.innerText="0"; balance.innerText="0";
+ save(); alert("Purchase Saved Successfully")
+}
+
+function updatePurchase(){
+ let p=store.purchases.find(x=>x.pub.toLowerCase()===updPub.value.toLowerCase())
+ if(!p){alert("Publication not found. Ensure name matches exactly."); return}
+ 
+ if(updBook.value){
+  let amt=updQty.value*updPrice.value
+  p.books.push({name:updBook.value, qty:+updQty.value, price:+updPrice.value, amt:amt})
+  p.grossTotal += amt
+  p.netTotal = p.grossTotal - (p.grossTotal * ((p.discount || 0)/100))
+ }
+ 
+ if(updPaid.value && +updPaid.value > 0){
+  if(!p.payments) p.payments = [{date: p.date, amount: p.paid || 0}];
+  p.payments.push({date: today, amount: +updPaid.value})
+ }
+ 
+ save(); alert("Record Updated with new info/payment!");
+ updPub.value=updBook.value=updQty.value=updPrice.value=updPaid.value="";
+}
+
+function loadReports(){
+ reportTable.innerHTML=""
+ let searchTerm = document.getElementById("pubSearch").value.toLowerCase();
+ let map = {}
+ store.purchases.forEach(p => {
+  if(p.date >= fromDate.value && p.date <= toDate.value){
+   if(p.pub.toLowerCase().includes(searchTerm)) {
+    if(!map[p.pub]) map[p.pub] = { books:[], totalNet:0, totalPaid:0 }
+    p.books.forEach(b => map[p.pub].books.push(b))
+    map[p.pub].totalNet += (p.netTotal || p.grossTotal)
+    let pSum = (p.payments) ? p.payments.reduce((sum, pay)=> sum + pay.amount, 0) : (p.paid || 0);
+    map[p.pub].totalPaid += pSum;
+   }
+  }
+ })
+ 
+ let found = Object.keys(map);
+ if(found.length === 0) {
+  reportTable.innerHTML = "<tr><td colspan='4'>No matching reports found</td></tr>";
+  return;
+ }
+
+ found.forEach(pub => {
+  let d = map[pub]; let bookRows = "";
+  d.books.forEach(b => { bookRows += `<tr><td>${b.name}</td><td>${b.qty}</td><td>${b.price}</td><td>${b.amt}</td></tr>` })
+  reportTable.innerHTML += `
+   <tbody style="border:3px solid #334155">
+    <tr class="pub-header"><th colspan="4">PUBLICATION: ${pub.toUpperCase()}</th></tr>
+    <tr class="sub-header">
+     <td>Net: ₹${d.totalNet.toFixed(2)}</td><td>Paid: ₹${d.totalPaid}</td><td colspan="2">Balance: ₹${(d.totalNet - d.totalPaid).toFixed(2)}</td>
+    </tr>
+    ${bookRows}
+   </tbody>`
+ })
+}
+
+function generatePDF() {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF();
+    let currentY = 20;
+    let searchTerm = document.getElementById("pubSearch").value.toLowerCase();
+
+    pdf.setFontSize(20);
+    pdf.text(shopName, 105, currentY, { align: "center" });
+    currentY += 10;
+    pdf.setFontSize(12);
+    pdf.text("Detailed Publication Ledger & Payment History", 105, currentY, { align: "center" });
+    currentY += 15;
+
+    let map = {};
+    store.purchases.forEach(p => {
+        if(p.date >= fromDate.value && p.date <= toDate.value){
+            if(p.pub.toLowerCase().includes(searchTerm)) {
+                if(!map[p.pub]) map[p.pub] = { books:[], totalNet:0, payments:[] };
+                p.books.forEach(b => map[p.pub].books.push(b));
+                map[p.pub].totalNet += (p.netTotal || p.grossTotal);
+                let pays = p.payments || [{date: p.date, amount: p.paid || 0}];
+                map[p.pub].payments.push(...pays);
+            }
+        }
+    });
+
+    Object.keys(map).forEach(pub => {
+        if (currentY > 220) { pdf.addPage(); currentY = 20; }
+        pdf.setFontSize(14);
+        pdf.text(`Publication: ${pub.toUpperCase()}`, 14, currentY);
+        currentY += 5;
+
+        const bookData = map[pub].books.map(b => [b.name, b.qty, `Rs. ${b.price}`, `Rs. ${b.amt}`]);
+        pdf.autoTable({
+            startY: currentY,
+            head: [['Book Name', 'Qty', 'Rate', 'Amount']],
+            body: bookData,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 41, 59] }
+        });
+
+        currentY = pdf.lastAutoTable.finalY + 8;
+        pdf.setFontSize(11);
+        pdf.text("Payment Installment History:", 14, currentY);
+        currentY += 2;
+        
+        const payData = map[pub].payments.map((p, index) => [`Installment ${index+1}`, p.date, `Rs. ${p.amount.toFixed(2)}`]);
+        pdf.autoTable({
+            startY: currentY,
+            head: [['Installment', 'Date', 'Paid Amount']],
+            body: payData,
+            theme: 'striped',
+            styles: { fontSize: 9 },
+            headStyles: { fillColor: [100, 116, 139] }
+        });
+
+        currentY = pdf.lastAutoTable.finalY + 10;
+        let totalPaid = map[pub].payments.reduce((s, val)=> s + val.amount, 0);
+        
+        pdf.setFontSize(11);
+        pdf.text(`Total Bill: Rs. ${map[pub].totalNet.toFixed(2)}`, 14, currentY);
+        pdf.text(`Total Paid: Rs. ${totalPaid.toFixed(2)}`, 80, currentY);
+        pdf.setTextColor(220, 38, 38);
+        pdf.text(`Balance Due: Rs. ${(map[pub].totalNet - totalPaid).toFixed(2)}`, 140, currentY);
+        pdf.setTextColor(0);
+        currentY += 15;
+    });
+
+    pdf.save(`${shopName}_Report.pdf`);
+}
+
+function sellSet(){
+ store.sales.push({date:today, name:setName.value, qty:+setQty.value, total:setQty.value*setPrice.value})
+ save(); loadSales();
+}
+
+function loadSales(){
+ salesTable.innerHTML="<tr><th>Date</th><th>Set</th><th>Qty</th><th>Total</th></tr>"
+ store.sales.forEach(s=>{ salesTable.innerHTML+=`<tr><td>${s.date}</td><td>${s.name}</td><td>${s.qty}</td><td>${s.total}</td></tr>` })
+}
+
+function exportExcel(){
+ let rows=[["Publication","Book","Qty","Rate","Amount"]]
+ let searchTerm = document.getElementById("pubSearch").value.toLowerCase();
+ store.purchases.forEach(p=>{ 
+  if(p.pub.toLowerCase().includes(searchTerm)) {
+    p.books.forEach(b=>{ rows.push([p.pub,b.name,b.qty,b.price,b.amt]) }) 
+  }
+ })
+ let ws=XLSX.utils.aoa_to_sheet(rows); let wb=XLSX.utils.book_new()
+ XLSX.utils.book_append_sheet(wb,ws,"Report"); XLSX.writeFile(wb,"Inventory.xlsx")
+}
+
+function saveShop(){ 
+    localStorage.setItem("shop", shopInput.value); 
+    document.getElementById("mainHeader").innerText = shopInput.value;
+    alert("Shop Name Saved"); 
+}
+function save(){ localStorage.setItem("store",JSON.stringify(store)) }
+function clearData(){ if(confirm("Clear all data?")){ localStorage.clear(); location.reload(); } }
+</script>
+
+</body>
+</html>
